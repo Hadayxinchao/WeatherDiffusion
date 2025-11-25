@@ -128,8 +128,8 @@ class Snow100KDataset(torch.utils.data.Dataset):
                 wd_new = 1024
             wd_new = int(16 * np.ceil(wd_new / 16.0))
             ht_new = int(16 * np.ceil(ht_new / 16.0))
-            input_img = input_img.resize((wd_new, ht_new), PIL.Image.ANTIALIAS)
-            gt_img = gt_img.resize((wd_new, ht_new), PIL.Image.ANTIALIAS)
+            input_img = input_img.resize((wd_new, ht_new), PIL.Image.LANCZOS)
+            gt_img = gt_img.resize((wd_new, ht_new), PIL.Image.LANCZOS)
 
             return torch.cat([self.transforms(input_img), self.transforms(gt_img)], dim=0), img_id
 

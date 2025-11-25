@@ -10,59 +10,68 @@ import re
 import random
 
 
-class AllWeather:
+class OHaze:
     def __init__(self, config):
         self.config = config
         self.transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 
-    def get_loaders(self, parse_patches=True, validation='snow'):
-        if validation == 'raindrop':
-            print("=> evaluating raindrop test set...")
-            path = os.path.join(self.config.data.data_dir, 'data', 'raindrop', 'test')
-            filename = 'raindroptesta.txt'
-        elif validation == 'rainfog':
-            print("=> evaluating outdoor rain-fog test set...")
-            path = os.path.join(self.config.data.data_dir, 'data', 'outdoor-rain')
-            filename = 'test1.txt'
-        else:   # snow
-            print("=> evaluating snowtest100K-L...")
-            path = os.path.join(self.config.data.data_dir, 'data', 'snow100k')
-            filename = 'snowtest100k_L.txt'
-
-        # Only create training dataset if the training data exists (for training mode)
+    def get_loaders(self, parse_patches=True, validation='test'):
+        """
+        Get data loaders for O-HAZE dataset
+        Args:
+            parse_patches: Whether to parse patches for training
+            validation: 'test' or 'val' for validation split
+        """
+        data_dir = os.path.join(self.config.data.data_dir, 'haze_data', 'O-HAZE', '# O-HAZY NTIRE 2018')
+        
+        # Training dataset
         train_loader = None
-        train_data_path = os.path.join(self.config.data.data_dir, 'data', 'allweather')
-        train_list_file = os.path.join(train_data_path, 'allweather.txt')
+        train_list_file = os.path.join(data_dir, 'train_list.txt')
         
         if os.path.exists(train_list_file):
-            train_dataset = AllWeatherDataset(train_data_path,
-                                              n=self.config.training.patch_n,
-                                              patch_size=self.config.data.image_size,
-                                              transforms=self.transforms,
-                                              filelist='allweather.txt',
-                                              parse_patches=parse_patches)
-            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=self.config.training.batch_size,
-                                                       shuffle=True, num_workers=self.config.data.num_workers,
-                                                       pin_memory=True)
+            train_dataset = OHazeDataset(
+                data_dir,
+                n=self.config.training.patch_n,
+                patch_size=self.config.data.image_size,
+                transforms=self.transforms,
+                filelist='train_list.txt',
+                parse_patches=parse_patches
+            )
+            train_loader = torch.utils.data.DataLoader(
+                train_dataset, 
+                batch_size=self.config.training.batch_size,
+                shuffle=True, 
+                num_workers=self.config.data.num_workers,
+                pin_memory=True
+            )
         
-        val_dataset = AllWeatherDataset(path, n=self.config.training.patch_n,
-                                        patch_size=self.config.data.image_size,
-                                        transforms=self.transforms,
-                                        filelist=filename,
-                                        parse_patches=parse_patches)
+        # Validation dataset
+        val_list_file = os.path.join(data_dir, f'{validation}_list.txt')
+        val_dataset = OHazeDataset(
+            data_dir,
+            n=self.config.training.patch_n,
+            patch_size=self.config.data.image_size,
+            transforms=self.transforms,
+            filelist=f'{validation}_list.txt',
+            parse_patches=parse_patches
+        )
 
         if not parse_patches:
             self.config.training.batch_size = 1
             self.config.sampling.batch_size = 1
 
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=self.config.sampling.batch_size,
-                                                 shuffle=False, num_workers=self.config.data.num_workers,
-                                                 pin_memory=True)
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset, 
+            batch_size=self.config.sampling.batch_size,
+            shuffle=False, 
+            num_workers=self.config.data.num_workers,
+            pin_memory=True
+        )
 
         return train_loader, val_loader
 
 
-class AllWeatherDataset(torch.utils.data.Dataset):
+class OHazeDataset(torch.utils.data.Dataset):
     def __init__(self, dir, patch_size, n, transforms, filelist=None, parse_patches=True):
         super().__init__()
 
@@ -70,8 +79,10 @@ class AllWeatherDataset(torch.utils.data.Dataset):
         train_list = os.path.join(dir, filelist)
         with open(train_list) as f:
             contents = f.readlines()
-            input_names = [i.strip() for i in contents]
-            gt_names = [i.strip().replace('input', 'gt') for i in input_names]
+            # Each line contains: hazy_path,gt_path
+            pairs = [line.strip().split(',') for line in contents if line.strip()]
+            input_names = [pair[0] for pair in pairs]
+            gt_names = [pair[1] for pair in pairs]
 
         self.input_names = input_names
         self.gt_names = gt_names
@@ -102,13 +113,13 @@ class AllWeatherDataset(torch.utils.data.Dataset):
     def get_images(self, index):
         input_name = self.input_names[index]
         gt_name = self.gt_names[index]
-        img_id = re.split('/', input_name)[-1][:-4]
-        input_img = PIL.Image.open(os.path.join(self.dir, input_name)) if self.dir else PIL.Image.open(input_name)
+        img_id = os.path.basename(input_name)[:-4]
+        
+        input_img = PIL.Image.open(os.path.join(self.dir, input_name))
         try:
-            gt_img = PIL.Image.open(os.path.join(self.dir, gt_name)) if self.dir else PIL.Image.open(gt_name)
+            gt_img = PIL.Image.open(os.path.join(self.dir, gt_name))
         except:
-            gt_img = PIL.Image.open(os.path.join(self.dir, gt_name)).convert('RGB') if self.dir else \
-                PIL.Image.open(gt_name).convert('RGB')
+            gt_img = PIL.Image.open(os.path.join(self.dir, gt_name)).convert('RGB')
 
         if self.parse_patches:
             i, j, h, w = self.get_params(input_img, (self.patch_size, self.patch_size), self.n)
@@ -133,9 +144,9 @@ class AllWeatherDataset(torch.utils.data.Dataset):
 
             return torch.cat([self.transforms(input_img), self.transforms(gt_img)], dim=0), img_id
 
+    def __len__(self):
+        return len(self.input_names)
+
     def __getitem__(self, index):
         res = self.get_images(index)
         return res
-
-    def __len__(self):
-        return len(self.input_names)
