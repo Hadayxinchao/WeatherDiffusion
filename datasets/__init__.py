@@ -3,5 +3,6 @@ from datasets.snow100k import *
 from datasets.outdoorrain import *
 from datasets.raindrop import *
 from datasets.ohaze import *
+from datasets.custom_haze import *
 
-__all__ = ["AllWeather", "Snow100K", "OutdoorRain", "RainDrop", "OHaze"]
+__all__ = ["AllWeather", "Snow100K", "OutdoorRain", "RainDrop", "OHaze", "CustomHaze"]

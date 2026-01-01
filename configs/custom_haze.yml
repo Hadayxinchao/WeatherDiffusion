@@ -1,0 +1,44 @@
+data:
+  dataset: CustomHaze
+  image_size: 64  # hoặc 128 nếu muốn patches lớn hơn
+  channels: 3
+  num_workers: 8
+  data_dir: ./  # Thư mục gốc repo WeatherDiffusion
+  conditional: True
+
+model:
+  in_channels: 3
+  out_ch: 3
+  ch: 128
+  ch_mult: [1, 2, 3, 4]
+  num_res_blocks: 2
+  attn_resolutions: [16]
+  dropout: 0.0
+  ema_rate: 0.999
+  ema: True
+  resamp_with_conv: True
+
+diffusion:
+  beta_schedule: linear
+  beta_start: 0.0001
+  beta_end: 0.02
+  num_diffusion_timesteps: 1000
+
+training:
+  patch_n: 16  # Number of patches per image
+  batch_size: 8  # Giảm nếu bị out of memory
+  n_epochs: 500
+  n_iters: 500000
+  snapshot_freq: 1000
+  validation_freq: 1000
+
+sampling:
+  batch_size: 1
+  last_only: True
+
+optim:
+  weight_decay: 0.0
+  optimizer: Adam
+  lr: 0.00002
+  amsgrad: False
+  eps: 1e-8
