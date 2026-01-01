@@ -8,9 +8,9 @@ from .allweather import AllWeather
 def get_dataset(config):
     dataset_name = config.data.dataset
     
-    # Logic bắt tên thông minh
     if dataset_name.startswith('CustomHaze'):
         return CustomHaze(config)
+    
     elif dataset_name == 'Snow100K':
         return Snow100K(config)
     elif dataset_name == 'RainDrop':
