@@ -79,7 +79,7 @@ def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_time
         betas = np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
     elif beta_schedule == "const":
         betas = beta_end * np.ones(num_diffusion_timesteps, dtype=np.float64)
-    elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
+    elif beta_schedule == "jsd":
         betas = 1.0 / np.linspace(num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64)
     elif beta_schedule == "sigmoid":
         betas = np.linspace(-6, 6, num_diffusion_timesteps)
@@ -108,10 +108,28 @@ class DenoisingDiffusion(object):
         self.model.to(self.device)
         self.model = torch.nn.DataParallel(self.model)
 
+        print("=> Configuring Freeze Layers for Fine-tuning...")
+        frozen_count = 0
+        trainable_count = 0
+        for name, param in self.model.named_parameters():
+            # Nếu tên layer chứa 'down' (encoder) -> đóng băng
+            if 'down' in name or 'temb' in name: 
+                param.requires_grad = False
+                frozen_count += 1
+            else:
+                param.requires_grad = True
+                trainable_count += 1
+        
+        print(f"   Frozen layers (Encoder): {frozen_count}")
+        print(f"   Trainable layers (Middle/Decoder): {trainable_count}")
+        # -------------------------------------
+
         self.ema_helper = EMAHelper()
         self.ema_helper.register(self.model)
 
-        self.optimizer = utils.optimize.get_optimizer(self.config, self.model.parameters())
+        # Chỉ truyền các tham số requires_grad=True vào optimizer
+        trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+        self.optimizer = utils.optimize.get_optimizer(self.config, trainable_params)
         self.start_epoch, self.step = 0, 0
 
         betas = get_beta_schedule(
@@ -128,7 +146,7 @@ class DenoisingDiffusion(object):
         checkpoint = utils.logging.load_checkpoint(load_path, None)
         self.start_epoch = checkpoint['epoch']
         self.step = checkpoint['step']
-        self.model.load_state_dict(checkpoint['state_dict'], strict=True)
+        self.model.load_state_dict(checkpoint['state_dict'], strict=False) # strict=False để tránh lỗi khi load model pretrained vào model đã freeze 1 phần
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.ema_helper.load_state_dict(checkpoint['ema_helper'])
         if ema:
@@ -176,6 +194,7 @@ class DenoisingDiffusion(object):
                     self.model.eval()
                     self.sample_validation_patches(val_loader, self.step)
 
+                # Lưu checkpoint với tên dựa trên config
                 if self.step % self.config.training.snapshot_freq == 0 or self.step == 1:
                     utils.logging.save_checkpoint({
                         'epoch': epoch + 1,
