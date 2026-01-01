@@ -5,21 +5,21 @@ from .ohaze import OHaze
 from .custom_haze import CustomHaze
 from .allweather import AllWeather
 
-def get_dataset(args, config):
+def get_dataset(config):
     dataset_name = config.data.dataset
     
-    if dataset_name == 'Snow100K':
-        return Snow100K(args, config)
+    # Logic bắt tên thông minh
+    if dataset_name.startswith('CustomHaze'):
+        return CustomHaze(config)
+    elif dataset_name == 'Snow100K':
+        return Snow100K(config)
     elif dataset_name == 'RainDrop':
-        return RainDrop(args, config)
+        return RainDrop(config)
     elif dataset_name == 'OutdoorRain':
-        return OutdoorRain(args, config)
+        return OutdoorRain(config)
     elif dataset_name == 'OHaze':
-        return OHaze(args, config)
+        return OHaze(config)
     elif dataset_name == 'AllWeather':
-        return AllWeather(args, config)
-    elif dataset_name.startswith('CustomHaze'):
-        return CustomHaze(args, config)
-    
+        return AllWeather(config)
     else:
-        raise KeyError(f"Dataset không hợp lệ: {dataset_name}. Hãy kiểm tra lại configs.")
+        raise KeyError(f"Dataset không hợp lệ: {dataset_name}")
