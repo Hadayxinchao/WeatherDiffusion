@@ -108,26 +108,24 @@ class DenoisingDiffusion(object):
         self.model.to(self.device)
         self.model = torch.nn.DataParallel(self.model)
 
+        # --- FREEZE ENCODER LAYERS ---
         print("=> Configuring Freeze Layers for Fine-tuning...")
         frozen_count = 0
         trainable_count = 0
         for name, param in self.model.named_parameters():
-            # Nếu tên layer chứa 'down' (encoder) -> đóng băng
             if 'down' in name or 'temb' in name: 
                 param.requires_grad = False
                 frozen_count += 1
             else:
                 param.requires_grad = True
                 trainable_count += 1
-        
         print(f"   Frozen layers (Encoder): {frozen_count}")
         print(f"   Trainable layers (Middle/Decoder): {trainable_count}")
-        # -------------------------------------
+        # -----------------------------
 
         self.ema_helper = EMAHelper()
         self.ema_helper.register(self.model)
 
-        # Chỉ truyền các tham số requires_grad=True vào optimizer
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
         self.optimizer = utils.optimize.get_optimizer(self.config, trainable_params)
         self.start_epoch, self.step = 0, 0
@@ -138,20 +136,27 @@ class DenoisingDiffusion(object):
             beta_end=config.diffusion.beta_end,
             num_diffusion_timesteps=config.diffusion.num_diffusion_timesteps,
         )
-
         betas = self.betas = torch.from_numpy(betas).float().to(self.device)
         self.num_timesteps = betas.shape[0]
 
     def load_ddm_ckpt(self, load_path, ema=False):
         checkpoint = utils.logging.load_checkpoint(load_path, None)
-        self.start_epoch = checkpoint['epoch']
-        self.step = checkpoint['step']
-        self.model.load_state_dict(checkpoint['state_dict'], strict=False) # strict=False để tránh lỗi khi load model pretrained vào model đã freeze 1 phần
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
+        self.model.load_state_dict(checkpoint['state_dict'], strict=False)
         self.ema_helper.load_state_dict(checkpoint['ema_helper'])
+        
+        try:
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+            self.start_epoch = checkpoint['epoch']
+            self.step = checkpoint['step']
+            print(f"=> Resume Training thành công từ epoch {self.start_epoch}")
+        except Exception as e:
+            print(f"=> KHÔNG load được Optimizer cũ (do Freeze layers hoặc đổi config).")
+            print(f"=> Sẽ bắt đầu FINETUNE từ đầu (Epoch 0) với trọng số pretrained.")
+            self.start_epoch = 0
+            self.step = 0
+
         if ema:
             self.ema_helper.ema(self.model)
-        print("=> loaded checkpoint '{}' (epoch {}, step {})".format(load_path, checkpoint['epoch'], self.step))
 
     def train(self, DATASET):
         cudnn.benchmark = True
@@ -219,7 +224,10 @@ class DenoisingDiffusion(object):
         return xs
     
     def sample_validation_patches(self, val_loader, step):
+        # Tạo thư mục lưu ảnh validation
         image_folder = os.path.join(self.args.image_folder, self.config.data.dataset + str(self.config.data.image_size))
+        os.makedirs(image_folder, exist_ok=True) # Đảm bảo thư mục tồn tại
+        
         with torch.no_grad():
             print(f"Processing a single batch of validation images at step: {step}")
             for i, (x, y) in enumerate(val_loader):
@@ -228,7 +236,15 @@ class DenoisingDiffusion(object):
             n = x.size(0)
             x_cond = x[:, :3, :, :].to(self.device)
             x_cond = data_transform(x_cond)
-            x = torch.randn(n, 3, self.config.data.image_size, self.config.data.image_size, device=self.device)
+            
+            # --- FIX LỖI SIZE ---
+            # Lấy kích thước thật của ảnh đầu vào (H, W) thay vì dùng config cố định
+            h, w = x_cond.shape[2], x_cond.shape[3]
+            
+            # Tạo nhiễu ngẫu nhiên CÙNG SIZE với ảnh cond
+            x = torch.randn(n, 3, h, w, device=self.device)
+            
+            # Gọi hàm sample
             x = self.sample_image(x_cond, x)
             x = inverse_data_transform(x)
             x_cond = inverse_data_transform(x_cond)
