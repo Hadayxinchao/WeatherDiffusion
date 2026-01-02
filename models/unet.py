@@ -299,7 +299,8 @@ class DiffusionUNet(nn.Module):
                                         padding=1)
 
     def forward(self, x, t):
-        assert x.shape[2] == x.shape[3] == self.resolution
+        # Bỏ dòng assert này để cho phép chạy với kích thước ảnh khác config ---
+        # assert x.shape[2] == x.shape[3] == self.resolution
 
         # timestep embedding
         temb = get_timestep_embedding(t, self.ch)
